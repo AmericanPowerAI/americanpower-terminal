@@ -9,12 +9,13 @@ redis==5.0.3
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 slowapi==0.1.8
-fastapi-cache2==0.2.2  # CHANGED FROM 1.0.1 (non-existent version)
+fastapi-cache2==0.2.2
+fastapi-limiter==0.1.4  # ADDED THIS LINE
 python-dotenv==1.0.1
 
 # MONITORING (stable versions)
 prometheus-client==0.20.0
-sentry-sdk==1.15.0  # Removed [fastapi] extra
+sentry-sdk==1.15.0
 
 # TOOLS (working versions)
 python-nmap==0.7.1
