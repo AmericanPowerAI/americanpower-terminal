@@ -1,32 +1,17 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import subprocess
+from terminal_routes import router as terminal_router
 
 app = FastAPI()
 
-# Allow frontend to call this backend
+# CORS Middleware - update 'allow_origins' to your frontend domain for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this to your domain in production
+    allow_origins=["*"],  # Replace with ["https://yourfrontend.com"] in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class CommandInput(BaseModel):
-    command: str
-
-@app.post("/terminal")
-async def run_command(data: CommandInput):
-    try:
-        # Runs command and returns stdout or stderr
-        result = subprocess.run(data.command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        return {
-            "output": result.stdout if result.stdout else result.stderr
-        }
-    except Exception as e:
-        return {"output": str(e)}
-
-from terminal_routes import router as terminal_router
+# Include terminal functionality routes under /terminal
 app.include_router(terminal_router, prefix="/terminal")
