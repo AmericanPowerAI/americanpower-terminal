@@ -27,3 +27,6 @@ async def run_command(data: CommandInput):
         }
     except Exception as e:
         return {"output": str(e)}
+
+from terminal_routes import router as terminal_router
+app.include_router(terminal_router, prefix="/terminal")
