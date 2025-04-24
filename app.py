@@ -158,3 +158,13 @@ async def log_command_webhook(payload: dict):
     """For external systems to receive command logs"""
     logger.info(f"Webhook received: {payload}")
     return {"status": "logged"}
+
+# GPU acceleration
+app.state.llm_engine = load_ai_model("gpt-4-turbo", device="cuda")
+
+# Real-time monitoring
+@app.middleware("http")
+async def resource_monitor(request: Request, call_next):
+    if psutil.cpu_percent() > 90:
+        raise HTTPException(429, "Server overloaded")
+    return await call_next(request)
