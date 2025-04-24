@@ -1,0 +1,16 @@
+{
+  "default_policy": "deny",
+  "rules": [
+    {
+      "command": "nmap*",
+      "allowed_users": ["root", "apg-admin"],
+      "require_2fa": true,
+      "max_runtime": 300
+    },
+    {
+      "command": "ai-*",
+      "allowed_groups": ["ai-users"],
+      "resource_limits": {"gpu_mem": "4GB"}
+    }
+  ]
+}
