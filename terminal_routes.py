@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import httpx
 
 # Initialize router
@@ -34,7 +34,7 @@ class TerminalCommand(BaseModel):
     timeout: int = Field(default=30, ge=1, le=300)
     cwd: Optional[str] = Field(None, max_length=100)
 
-    @validator('command')
+    @field_validator('command')
     def validate_command(cls, v):
         blocked = ["rm ", "dd ", "shutdown", "mkfs", "fdisk", ">", "|", "&", ";", "$(", "`"]
         if any(b in v.lower() for b in blocked):
@@ -43,9 +43,9 @@ class TerminalCommand(BaseModel):
 
 class AIScanRequest(BaseModel):
     target: str
-    scan_type: str = Field("stealth", regex="^(stealth|aggressive|full)$")
+    scan_type: str = Field("stealth", pattern=r"^(stealth|aggressive|full)$")
 
-    @validator('target')
+    @field_validator('target')
     def validate_target(cls, v):
         try:
             ipaddress.ip_address(v)
@@ -158,7 +158,7 @@ async def ai_network_scan(
             summary="VPN management",
             response_description="VPN status change result")
 async def manage_vpn(
-    action: str = Field(..., regex="^(connect|disconnect|status)$"),
+    action: str = Field(..., pattern=r"^(connect|disconnect|status)$"),
     api_key: str = Depends(validate_api_key)
 ):
     """Control VPN connection"""
