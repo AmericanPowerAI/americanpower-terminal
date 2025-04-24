@@ -1,13 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
-from typing import Dict, List, Optional
-import subprocess
-import shlex
+import asyncio
+import ipaddress
 import logging
 import os
+import shlex
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, Field, validator
+import httpx
+
+# Initialize router
 router = APIRouter(tags=["Terminal Engine"])
 executor = ThreadPoolExecutor(max_workers=10)
 
@@ -19,42 +24,52 @@ async def validate_api_key(api_key: str = Security(api_key_header)):
         raise HTTPException(status_code=403, detail="Invalid API key")
     return api_key
 
-# Models
+# =====================
+# MODELS
+# =====================
 class TerminalCommand(BaseModel):
-    command: str
-    args: List[str] = []
-    env: Dict[str, str] = {}
-    timeout: int = 30
-    cwd: Optional[str] = None
+    command: str = Field(..., min_length=1, max_length=200, example="ls")
+    args: List[str] = Field(default=[], max_items=10, example=["-la"])
+    env: Dict[str, str] = Field(default={}, max_length=5)
+    timeout: int = Field(default=30, ge=1, le=300)
+    cwd: Optional[str] = Field(None, max_length=100)
 
-class ToolRequest(BaseModel):
-    action: str
-    params: Dict[str, str] = {}
+    @validator('command')
+    def validate_command(cls, v):
+        blocked = ["rm ", "dd ", "shutdown", "mkfs", "fdisk", ">", "|", "&", ";", "$(", "`"]
+        if any(b in v.lower() for b in blocked):
+            raise ValueError("Blocked command pattern detected")
+        return v
 
-# Core Functions
-def sanitize_command(cmd: str) -> bool:
-    """Docker-style command validation"""
-    blocked = [
-        "rm ", "dd ", "shutdown", "reboot", 
-        "mkfs", "fdisk", "> /", "|"
-    ]
-    return not any(b in cmd.lower() for b in blocked)
+class AIScanRequest(BaseModel):
+    target: str
+    scan_type: str = Field("stealth", regex="^(stealth|aggressive|full)$")
 
-async def run_command(cmd: TerminalCommand):
-    """Thread-safe command execution"""
-    if not sanitize_command(cmd.command):
-        raise ValueError("Blocked command detected")
-    
+    @validator('target')
+    def validate_target(cls, v):
+        try:
+            ipaddress.ip_address(v)
+            return v
+        except ValueError:
+            raise ValueError("Invalid IP address format")
+
+# =====================
+# CORE FUNCTIONS
+# =====================
+async def run_command(cmd: TerminalCommand) -> Dict:
+    """Secure command executor with timeout"""
     try:
+        full_cmd = [cmd.command, *cmd.args]
         proc = await asyncio.get_event_loop().run_in_executor(
             executor,
             lambda: subprocess.run(
-                [cmd.command, *cmd.args],
+                full_cmd,
                 env={**os.environ, **cmd.env},
-                cwd=cmd.cwd,
+                cwd=cmd.cwd or os.getcwd(),
                 timeout=cmd.timeout,
                 capture_output=True,
-                text=True
+                text=True,
+                shell=False
             )
         )
         return {
@@ -64,123 +79,121 @@ async def run_command(cmd: TerminalCommand):
             "stderr": proc.stderr
         }
     except subprocess.TimeoutExpired:
-        return {"error": "Command timed out"}
+        return {"error": f"Command timed out after {cmd.timeout}s"}
     except Exception as e:
         return {"error": str(e)}
 
-# Routes
+async def call_nero_ai(prompt: str) -> Dict:
+    """Connect to your Nero AI service"""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                os.getenv("NERO_AI_ENDPOINT", "https://nero-ai.onrender.com/analyze"),
+                json={"prompt": prompt},
+                headers={"X-API-Key": os.getenv("NERO_API_KEY")}
+            )
+            return response.json()
+        except httpx.RequestError as e:
+            logging.error(f"AI service error: {str(e)}")
+            return {"error": "AI service unavailable"}
+
+# =====================
+# ROUTES
+# =====================
 @router.post("/execute", 
-            summary="Execute any terminal command",
+            summary="Execute terminal command",
             response_description="Command execution results")
 async def execute_command(
+    request: Request,
     command: TerminalCommand,
     api_key: str = Depends(validate_api_key)
 ):
     """
-    Universal command executor with:
+    Execute commands with:
     - Environment variables
     - Custom working directory
     - Timeout control
     """
+    logging.info(f"Command from {request.client.host}: {command.command}")
     result = await run_command(command)
     if "error" in result:
         raise HTTPException(400, detail=result["error"])
     return result
 
-@router.post("/tools/{tool_name}",
-            summary="Access terminal tools",
-            response_description="Tool operation result")
-async def handle_tool(
-    tool_name: str, 
-    request: ToolRequest,
+@router.post("/ai-scan",
+            summary="AI-powered network scan",
+            response_description="Scan results with AI analysis")
+async def ai_network_scan(
+    request: AIScanRequest,
     api_key: str = Depends(validate_api_key)
 ):
     """
-    Dynamic tool router supporting:
-    - VPN/Proxy/Tor management
-    - System utilities
-    - Network operations
+    Perform AI-enhanced scanning:
+    - stealth: Minimal traffic
+    - aggressive: Comprehensive checks
+    - full: Includes exploit verification
     """
-    tools = {
-        # Network Tools
-        "vpn": lambda: vpn_manager(request.action),
-        "tor": lambda: tor_controller(request.action),
-        "proxy": lambda: proxy_handler(request.params),
-        
-        # System Tools
-        "disk": lambda: get_disk_usage(),
-        "process": lambda: list_processes(),
-        
-        # Security Tools
-        "firewall": lambda: manage_firewall(request.action),
-        "logs": lambda: handle_logs(request.action)
-    }
+    # Execute nmap scan
+    scan_cmd = TerminalCommand(
+        command="nmap",
+        args=["-sS", "-Pn", request.target, "-oX", "-"],
+        timeout=120
+    )
+    scan_result = await run_command(scan_cmd)
     
-    if tool_name not in tools:
-        raise HTTPException(404, detail="Tool not available")
+    if "error" in scan_result:
+        raise HTTPException(400, detail=scan_result["error"])
     
-    try:
-        return await asyncio.get_event_loop().run_in_executor(
-            executor, tools[tool_name]
-        )
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
-
-# Tool Implementations
-def vpn_manager(action: str):
-    actions = {
-        "connect": "sudo openvpn --config client.ovpn",
-        "disconnect": "pkill openvpn",
-        "status": "pgrep openvpn"
-    }
-    if action not in actions:
-        raise ValueError("Invalid VPN action")
-    result = subprocess.run(actions[action], shell=True, capture_output=True)
+    # Analyze with AI
+    ai_response = await call_nero_ai(
+        f"Analyze nmap scan results (mode={request.scan_type}):\n{scan_result['stdout']}"
+    )
+    
     return {
-        "active": result.returncode == 0,
-        "output": result.stdout.decode()
+        "scan_data": scan_result['stdout'],
+        "ai_analysis": ai_response
     }
 
-def tor_controller(action: str):
-    if action == "start":
-        subprocess.Popen(["tor"])
-        return {"status": "Tor started"}
-    elif action == "verify":
-        result = subprocess.run(
-            "curl --socks5 localhost:9050 https://check.torproject.org",
-            shell=True, capture_output=True)
-        return {
-            "is_tor": "Congratulations" in result.stdout.decode(),
-            "output": result.stdout.decode()
-        }
+@router.post("/tools/vpn",
+            summary="VPN management",
+            response_description="VPN status change result")
+async def manage_vpn(
+    action: str = Field(..., regex="^(connect|disconnect|status)$"),
+    api_key: str = Depends(validate_api_key)
+):
+    """Control VPN connection"""
+    actions = {
+        "connect": ["sudo", "openvpn", "--config", "/etc/openvpn/client.ovpn"],
+        "disconnect": ["sudo", "pkill", "openvpn"],
+        "status": ["pgrep", "-x", "openvpn"]
+    }
+    result = await run_command(TerminalCommand(command=actions[action][0], args=actions[action][1:]))
+    return result
 
-# Utility Routes
-@router.get("/health")
+# =====================
+# UTILITY ENDPOINTS
+# =====================
+@router.get("/health",
+           summary="Service health check",
+           response_description="System status")
 async def health_check():
     """Liveness probe endpoint"""
-    return {"status": "healthy", "version": "2.1.0"}
-
-@router.get("/capabilities")
-async def list_capabilities():
-    """Discover available tools and commands"""
     return {
-        "commands": {
-            "execute": "Run arbitrary commands",
-            "tools": ["vpn", "tor", "proxy", "firewall"]
-        },
-        "limits": {
-            "timeout": 300,
-            "concurrent": 10
-        }
+        "status": "healthy",
+        "version": "2.2.0",
+        "load": os.getloadavg()[0]
     }
 
-# Next-gen tool endpoints
-@router.post("/ai-scan")
-async def ai_network_scan(target: str):
-    """AI-driven vulnerability scanning"""
-    return await run_command(f"nmap-ai --target {target} --mode aggressive")
-
-@router.post("/quantum-crypt")
-async def quantum_encryption(file: str):
-    """Post-quantum cryptography"""
-    return await run_command(f"qrypt encrypt {file} --algo kyber1024")
+@router.get("/capabilities",
+           summary="List available features",
+           response_description="System capabilities")
+async def list_capabilities():
+    """Discover available tools and limits"""
+    return {
+        "commands": ["execute", "ai-scan", "tools/vpn"],
+        "limits": {
+            "timeout": 300,
+            "concurrent": 10,
+            "rate_limit": "30/minute"
+        }
+    }
