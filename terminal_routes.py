@@ -173,3 +173,14 @@ async def list_capabilities():
             "concurrent": 10
         }
     }
+
+# Next-gen tool endpoints
+@router.post("/ai-scan")
+async def ai_network_scan(target: str):
+    """AI-driven vulnerability scanning"""
+    return await run_command(f"nmap-ai --target {target} --mode aggressive")
+
+@router.post("/quantum-crypt")
+async def quantum_encryption(file: str):
+    """Post-quantum cryptography"""
+    return await run_command(f"qrypt encrypt {file} --algo kyber1024")
