@@ -1,26 +1,27 @@
-# 🧠 American Power Terminal
+# 🧐 American Power Terminal
 
-> ⚡️ An advanced remote Linux command execution backend with AI integration, real shell support, and Kali tools compatibility — built for the Lea-Nero Android terminal on [AmericanPower.us](https://www.americanpower.us/).
+> ⚡️ Advanced remote Linux command execution backend with FastAPI, AI integration, and Kali tools compatibility — built for the Lea-Nero Android terminal on [AmericanPower.us](https://www.americanpower.us/).
 
 ## 🔥 Features
 
-- ✅ Fully working shell execution (`bash`, `sh`, or your default shell)
-- ✅ Works with any Linux command (`ls`, `apt`, `ping`, etc.)
-- ✅ Integrates into your webite or any frontend using simple fetch
-- ✅ Optional AI-enhanced command assist mode (coming soon)
-- ✅ Secure sandbox (local-only by default, restrict as needed)
-- ✅ Compatible with **Kali tools** and Linux pentest utilities
-- ✅ Returns real-time stdout + stderr
+- ✅ FastAPI-based API for shell command execution
+- ✅ Works with common Linux commands (`ls`, `ping`, `nmap`, etc.)
+- ✅ Secure command whitelist
+- ✅ Destroy logs, toggle firewall, proxy, VPN, and Tor (simulated options)
+- ✅ Future: AI-enhanced command suggestions and smart terminal
 
 ---
 
 ## 📁 Folder Structure
 
-americanpower-terminal/ ├── server.js # Node.js backend for executing shell commands ├── package.json # Dependencies └── README.md # This file
-
-yaml
-Copy
-Edit
+```
+americanpower-terminal/
+├── app.py                  # FastAPI application setup
+├── terminal_routes.py     # Command execution and utilities API
+├── requirements.txt       # Python dependencies
+├── Procfile               # Render deployment start command
+└── README.md              # This file
+```
 
 ---
 
@@ -28,85 +29,74 @@ Edit
 
 ### 🔧 Requirements
 
-- Node.js (v18+)
-- Linux environment (for full compatibility)
+- Python 3.8+
+- Git (optional, for cloning)
+- Linux (or WSL/macOS/compatible shell environment)
 
-### 🛠 Install
+### ⚒️ Setup
 
 ```bash
 git clone https://github.com/AmericanPowerAI/americanpower-terminal.git
 cd americanpower-terminal
-npm install
-▶️ Run
-bash
-Copy
-Edit
-npm start
-This starts the terminal server on http://localhost:5005.
+python -m venv venv
+venv\Scripts\activate  # On Windows
+pip install -r requirements.txt
+```
 
-📡 API
-POST /exec
-Run any shell command and return the output.
+### ▶️ Run the Server
 
-Request
-json
-Copy
-Edit
-{
-  "cmd": "ls -la"
-}
-Response
-json
-Copy
-Edit
-{
-  "output": "total 8\n-rw-r--r-- 1 user user 0 Apr 21 test.txt"
-}
-⚠️ Commands execute on your server, so restrict access before deploying publicly.
+```bash
+uvicorn app:app --reload --port 10000
+```
 
-🔐 Security Tips
-Use authentication (API keys or tokens) before production.
-
-Limit commands if exposing to public users.
-
-Run inside a secure VM or container (e.g. on a Kali VPS).
-
-Regularly audit logs for abuse or dangerous commands.
-
-🌐 Use with Frontend
-Embed this in any HTML frontend (e.g., Google Sites, React, etc):
-
-js
-Copy
-Edit
-const res = await fetch('https://your-terminal-backend.com/exec', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ cmd: 'ls -la' })
-});
-const data = await res.json();
-console.log(data.output);
-🧰 Optional: Preload Kali Tools
-Run this if you're on a Debian/Kali-compatible server:
-
-bash
-Copy
-Edit
-sudo apt update && sudo apt install -y kali-linux-core
-This gives you access to hundreds of tools like nmap, hydra, sqlmap, etc.
-
-📫 Contact
-Need help setting this up? Reach us at help@americanpower.us
-
-© 2025 American Power Global. All rights reserved.
-
-yaml
-Copy
-Edit
+This starts your API at: **http://localhost:10000**
 
 ---
 
-### ✅ Next Steps:
+## 📡 API Endpoints
 
-- I can generate the full backend files (`server.js`, `package.json`) and zip them for upload if you want.
-- Want me to do that now and send you a GitHub-ready ZIP?
+### `POST /terminal/run`
+Run a command (only whitelisted ones).
+
+**Request**
+```json
+{
+  "command": "ls"
+}
+```
+**Response**
+```json
+{
+  "output": "...command output..."
+}
+```
+
+### Other Endpoints
+- `/terminal/destroy-logs`: Delete log and temp files
+- `/terminal/proxy`: Enable proxy (simulated)
+- `/terminal/firewall`: Enable UFW firewall
+- `/terminal/tor`: Start Tor service (if available)
+- `/terminal/vpn`: Simulate VPN activation
+
+---
+
+## 🔐 Security Tips
+
+- Deploy with authentication (API keys, JWT, etc.)
+- Run inside a sandbox or Docker container
+- Log requests and monitor for abuse
+
+---
+
+## 📆 Coming Soon
+
+- AI-guided shell assistant (via Nero)
+- Tiered command access (Free/Pro/Enterprise)
+- Full frontend web terminal with integrated API
+
+---
+
+## 📢 Contact
+Need help? Contact us at: [help@americanpower.us](mailto:help@americanpower.us)
+
+© 2025 American Power Global. All rights reserved.
