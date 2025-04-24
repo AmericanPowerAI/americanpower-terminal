@@ -7,7 +7,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi import APIRouter, Depends, HTTPException, Request, Security, Query
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, field_validator
 import httpx
@@ -158,7 +158,7 @@ async def ai_network_scan(
             summary="VPN management",
             response_description="VPN status change result")
 async def manage_vpn(
-    action: str = Field(..., pattern=r"^(connect|disconnect|status)$"),
+    action: str = Query(..., pattern=r"^(connect|disconnect|status)$"),
     api_key: str = Depends(validate_api_key)
 ):
     """Control VPN connection"""
@@ -167,7 +167,10 @@ async def manage_vpn(
         "disconnect": ["sudo", "pkill", "openvpn"],
         "status": ["pgrep", "-x", "openvpn"]
     }
-    result = await run_command(TerminalCommand(command=actions[action][0], args=actions[action][1:]))
+    result = await run_command(TerminalCommand(
+        command=actions[action][0], 
+        args=actions[action][1:]
+    ))
     return result
 
 # =====================
