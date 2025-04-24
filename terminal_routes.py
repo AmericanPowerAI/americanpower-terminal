@@ -1,96 +1,175 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
+from typing import Dict, List, Optional
 import subprocess
-import os
-import shutil
+import shlex
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 
-router = APIRouter()
+router = APIRouter(tags=["Terminal Engine"])
+executor = ThreadPoolExecutor(max_workers=10)
 
-# Logging setup
-logging.basicConfig(level=logging.INFO)
+# Security
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# Command model
-class CommandInput(BaseModel):
+async def validate_api_key(api_key: str = Security(api_key_header)):
+    if not api_key or api_key != os.getenv("API_KEY", "DEFAULT_SECRET_KEY"):
+        raise HTTPException(status_code=403, detail="Invalid API key")
+    return api_key
+
+# Models
+class TerminalCommand(BaseModel):
     command: str
+    args: List[str] = []
+    env: Dict[str, str] = {}
+    timeout: int = 30
+    cwd: Optional[str] = None
 
-# Whitelisted commands (add more as needed)
-ALLOWED_COMMANDS = [
-    "ls", "pwd", "whoami", "ping", "nmap", "curl", "uptime", "df", "top", "netstat"
-]
+class ToolRequest(BaseModel):
+    action: str
+    params: Dict[str, str] = {}
 
-def is_safe_command(command: str) -> bool:
-    return any(command.strip().startswith(allowed) for allowed in ALLOWED_COMMANDS)
+# Core Functions
+def sanitize_command(cmd: str) -> bool:
+    """Docker-style command validation"""
+    blocked = [
+        "rm ", "dd ", "shutdown", "reboot", 
+        "mkfs", "fdisk", "> /", "|"
+    ]
+    return not any(b in cmd.lower() for b in blocked)
 
-@router.post("/run")
-async def run_command(input: CommandInput):
-    logging.info(f"Attempting to run command: {input.command}")
-    if not is_safe_command(input.command):
-        raise HTTPException(status_code=403, detail="Command not allowed")
+async def run_command(cmd: TerminalCommand):
+    """Thread-safe command execution"""
+    if not sanitize_command(cmd.command):
+        raise ValueError("Blocked command detected")
+    
     try:
-        result = subprocess.run(
-            input.command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=10
+        proc = await asyncio.get_event_loop().run_in_executor(
+            executor,
+            lambda: subprocess.run(
+                [cmd.command, *cmd.args],
+                env={**os.environ, **cmd.env},
+                cwd=cmd.cwd,
+                timeout=cmd.timeout,
+                capture_output=True,
+                text=True
+            )
         )
-        return {"output": result.stdout or result.stderr}
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=408, detail="Command timed out")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/destroy-logs")
-async def destroy_logs():
-    try:
-        log_paths = ["/var/log", "/tmp", os.path.expanduser("~/.bash_history")]
-        for path in log_paths:
-            if os.path.isfile(path):
-                open(path, 'w').close()
-            elif os.path.isdir(path):
-                shutil.rmtree(path, ignore_errors=True)
-        logging.info("Logs destroyed.")
-        return {"message": "All logs and traces destroyed."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/proxy")
-async def enable_proxy():
-    logging.info("Proxy tool requested.")
-    # You can implement actual proxychain activation here
-    return {"message": "Proxy activated (simulated)."}
-
-@router.post("/firewall")
-async def toggle_firewall():
-    try:
-        result = subprocess.run("ufw enable", shell=True, capture_output=True, text=True)
-        logging.info("Firewall enabled.")
         return {
-            "message": "Firewall enabled.",
-            "output": result.stdout or result.stderr
+            "success": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr
         }
+    except subprocess.TimeoutExpired:
+        return {"error": "Command timed out"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
-@router.post("/tor")
-async def enable_tor():
+# Routes
+@router.post("/execute", 
+            summary="Execute any terminal command",
+            response_description="Command execution results")
+async def execute_command(
+    command: TerminalCommand,
+    api_key: str = Depends(validate_api_key)
+):
+    """
+    Universal command executor with:
+    - Environment variables
+    - Custom working directory
+    - Timeout control
+    """
+    result = await run_command(command)
+    if "error" in result:
+        raise HTTPException(400, detail=result["error"])
+    return result
+
+@router.post("/tools/{tool_name}",
+            summary="Access terminal tools",
+            response_description="Tool operation result")
+async def handle_tool(
+    tool_name: str, 
+    request: ToolRequest,
+    api_key: str = Depends(validate_api_key)
+):
+    """
+    Dynamic tool router supporting:
+    - VPN/Proxy/Tor management
+    - System utilities
+    - Network operations
+    """
+    tools = {
+        # Network Tools
+        "vpn": lambda: vpn_manager(request.action),
+        "tor": lambda: tor_controller(request.action),
+        "proxy": lambda: proxy_handler(request.params),
+        
+        # System Tools
+        "disk": lambda: get_disk_usage(),
+        "process": lambda: list_processes(),
+        
+        # Security Tools
+        "firewall": lambda: manage_firewall(request.action),
+        "logs": lambda: handle_logs(request.action)
+    }
+    
+    if tool_name not in tools:
+        raise HTTPException(404, detail="Tool not available")
+    
     try:
-        tor_running = "tor" in subprocess.getoutput("ps aux")
-        if tor_running:
-            return {"message": "Tor is already running."}
+        return await asyncio.get_event_loop().run_in_executor(
+            executor, tools[tool_name]
+        )
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+# Tool Implementations
+def vpn_manager(action: str):
+    actions = {
+        "connect": "sudo openvpn --config client.ovpn",
+        "disconnect": "pkill openvpn",
+        "status": "pgrep openvpn"
+    }
+    if action not in actions:
+        raise ValueError("Invalid VPN action")
+    result = subprocess.run(actions[action], shell=True, capture_output=True)
+    return {
+        "active": result.returncode == 0,
+        "output": result.stdout.decode()
+    }
+
+def tor_controller(action: str):
+    if action == "start":
         subprocess.Popen(["tor"])
-        logging.info("Tor process started.")
-        return {"message": "Tor routing activated."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "Tor started"}
+    elif action == "verify":
+        result = subprocess.run(
+            "curl --socks5 localhost:9050 https://check.torproject.org",
+            shell=True, capture_output=True)
+        return {
+            "is_tor": "Congratulations" in result.stdout.decode(),
+            "output": result.stdout.decode()
+        }
 
-@router.post("/vpn")
-async def enable_vpn():
-    try:
-        # Replace with your actual VPN command
-        # subprocess.run("openvpn --config /path/to/client.ovpn", shell=True)
-        logging.info("VPN activation triggered.")
-        return {"message": "VPN activated (simulated)."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# Utility Routes
+@router.get("/health")
+async def health_check():
+    """Liveness probe endpoint"""
+    return {"status": "healthy", "version": "2.1.0"}
+
+@router.get("/capabilities")
+async def list_capabilities():
+    """Discover available tools and commands"""
+    return {
+        "commands": {
+            "execute": "Run arbitrary commands",
+            "tools": ["vpn", "tor", "proxy", "firewall"]
+        },
+        "limits": {
+            "timeout": 300,
+            "concurrent": 10
+        }
+    }
