@@ -1,102 +1,99 @@
-# 🧐 American Power Terminal
+# ⚡ American Power Terminal
 
-> ⚡️ Advanced remote Linux command execution backend with FastAPI, AI integration, and Kali tools compatibility — built for the Lea-Nero Android terminal on [AmericanPower.us](https://www.americanpower.us/).
+> Advanced remote Linux command execution backend with FastAPI, AI integration, and Kali tools compatibility — built for the Lea-Nero Android terminal on [AmericanPower.us](https://www.americanpower.us/).
 
-## 🔥 Features
+![API Demo](https://img.shields.io/badge/DEMO-Online-green) 
+![FastAPI](https://img.shields.io/badge/FastAPI-0.110.1-blue)
+![Python](https://img.shields.io/badge/Python-3.8%2B-yellow)
 
-- ✅ FastAPI-based API for shell command execution
-- ✅ Works with common Linux commands (`ls`, `ping`, `nmap`, etc.)
-- ✅ Secure command whitelist
-- ✅ Destroy logs, toggle firewall, proxy, VPN, and Tor (simulated options)
-- ✅ Future: AI-enhanced command suggestions and smart terminal
+## 🔥 Enhanced Features
 
----
+- ✅ **Secure Command Execution**
+  - Docker-style command sanitization
+  - Process isolation with timeouts
+  - Automatic request rate limiting
 
-## 📁 Folder Structure
+- 🛡️ **Production-Ready Security**
+  - API key authentication
+  - CORS protection
+  - Request logging
 
-```
-americanpower-terminal/
-├── app.py                  # FastAPI application setup
-├── terminal_routes.py     # Command execution and utilities API
-├── requirements.txt       # Python dependencies
-├── Procfile               # Render deployment start command
-└── README.md              # This file
-```
+- 🤖 **AI Integration Points**
+  - `/terminal/ai-command` - Get AI-suggested commands
+  - `/terminal/explain` - Explain command output
 
----
+- 🧰 **Extended Toolset**
+  ```bash
+  # New tool commands
+  network-scan --target 192.168.1.0/24
+  log-analyzer --type auth
+  secure-erase --level dod
+🚀 Deployment
+Render.com (Current)
+bash
+# Ensure these environment variables are set:
+API_KEY=your_secret_key
+ALLOWED_ORIGINS=https://yourfrontend.com
+WEB_CONCURRENCY=4  # Optimal for Render's free tier
+Docker Deployment
+dockerfile
+FROM python:3.9-slim
+WORKDIR /app
+COPY . .
+RUN pip install -r requirements.txt
+EXPOSE 8000
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app:app"]
+📡 Enhanced API Endpoints
+Endpoint	Method	Description
+/terminal/execute	POST	Universal command executor
+/terminal/tools/{tool}	POST	Dynamic tool router (VPN/Tor/Proxy)
+/terminal/ai-help	POST	Get AI-assisted command suggestions
+/monitoring/metrics	GET	Prometheus metrics
+Sample AI Command Request:
 
-## 🚀 Quick Start
-
-### 🔧 Requirements
-
-- Python 3.8+
-- Git (optional, for cloning)
-- Linux (or WSL/macOS/compatible shell environment)
-
-### ⚒️ Setup
-
-```bash
-git clone https://github.com/AmericanPowerAI/americanpower-terminal.git
-cd americanpower-terminal
-python -m venv venv
-venv\Scripts\activate  # On Windows
-pip install -r requirements.txt
-```
-
-### ▶️ Run the Server
-
-```bash
-uvicorn app:app --reload --port 10000
-```
-
-This starts your API at: **http://localhost:10000**
-
----
-
-## 📡 API Endpoints
-
-### `POST /terminal/run`
-Run a command (only whitelisted ones).
-
-**Request**
-```json
+json
 {
-  "command": "ls"
+  "goal": "Scan open ports on my local network",
+  "constraints": "Stealthy scan"
 }
-```
-**Response**
-```json
-{
-  "output": "...command output..."
-}
-```
+🔐 Security Upgrade Guide
+Mandatory Production Settings
 
-### Other Endpoints
-- `/terminal/destroy-logs`: Delete log and temp files
-- `/terminal/proxy`: Enable proxy (simulated)
-- `/terminal/firewall`: Enable UFW firewall
-- `/terminal/tor`: Start Tor service (if available)
-- `/terminal/vpn`: Simulate VPN activation
+python
+# In app.py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "").split(","),
+    allow_methods=["POST", "GET"]
+)
+Recommended Additions
 
----
+bash
+# requirements.txt additions
+python-jose[cryptography]==3.3.0  # JWT support
+pyopenssl==24.0.0  # Enhanced SSL
+🛠️ Development Quick Start
+bash
+# With hot reload and debug tools
+uvicorn app:app --reload --port 10000 --ws-ping-timeout 120
 
-## 🔐 Security Tips
+# Test production config locally
+gunicorn -k uvicorn.workers.UvicornWorker -w 4 app:app
+📊 Monitoring Endpoints
+Endpoint	Access	Purpose
+/health	Public	Service liveness check
+/metrics	Internal	Prometheus metrics
+/usage	Admin	API usage statistics
+🌟 Coming Soon
+Terminal Web UI - React-based frontend
 
-- Deploy with authentication (API keys, JWT, etc.)
-- Run inside a sandbox or Docker container
-- Log requests and monitor for abuse
+Command Marketplace - Share custom tool scripts
 
----
+AI Sandbox - Safe environment for experimental commands
 
-## 📆 Coming Soon
-
-- AI-guided shell assistant (via Nero)
-- Tiered command access (Free/Pro/Enterprise)
-- Full frontend web terminal with integrated API
-
----
-
-## 📢 Contact
-Need help? Contact us at: [help@americanpower.us](mailto:help@americanpower.us)
+📢 Support
+For enterprise support and custom deployments:
+devops@americanpower.us
++1 (800) APG-TECH
 
 © 2025 American Power Global. All rights reserved.
