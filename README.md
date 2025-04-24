@@ -6,7 +6,7 @@
 
 - ✅ Fully working shell execution (`bash`, `sh`, or your default shell)
 - ✅ Works with any Linux command (`ls`, `apt`, `ping`, etc.)
-- ✅ Integrates into Google Sites or any frontend using simple fetch
+- ✅ Integrates into your webite or any frontend using simple fetch
 - ✅ Optional AI-enhanced command assist mode (coming soon)
 - ✅ Secure sandbox (local-only by default, restrict as needed)
 - ✅ Compatible with **Kali tools** and Linux pentest utilities
