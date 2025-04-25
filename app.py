@@ -1,8 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 import logging
 import os
 import psutil
@@ -23,12 +22,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting APG Terminal Engine...")
-    
-    # Initialize your terminal components here
-    # app.state.terminal_engine = initialize_terminal()
-    
     yield
-    
     # Shutdown
     logger.info("Shutting down...")
 
@@ -49,9 +43,7 @@ app = FastAPI(
     }
 )
 
-# =====================
-# MIDDLEWARE
-# =====================
+# Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -61,14 +53,11 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# =====================
-# TERMINAL ENDPOINTS (Directly in app.py)
-# =====================
+# Terminal Endpoints
 @app.post("/terminal/execute")
 async def execute_command(command: dict):
     """Core terminal execution endpoint"""
     try:
-        # Replace with your actual terminal logic
         result = {"output": f"Executed: {command.get('cmd')}"}
         return result
     except Exception as e:
@@ -77,24 +66,14 @@ async def execute_command(command: dict):
 
 @app.get("/terminal/status")
 async def terminal_status():
-    """Get terminal status"""
     return {"status": "active", "version": app.version}
 
-# =====================
-# ESSENTIAL ENDPOINTS
-# =====================
+# Health Check
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "version": app.version}
 
-# =====================
-# STATIC FILES
-# =====================
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# =====================
-# ERROR HANDLING
-# =====================
+# Error Handling
 @app.exception_handler(Exception)
 async def handle_exceptions(request: Request, exc: Exception):
     logger.error(f"Error processing {request.url}: {str(exc)}")
@@ -103,9 +82,7 @@ async def handle_exceptions(request: Request, exc: Exception):
         content={"error": "Internal server error"}
     )
 
-# =====================
-# RESOURCE MONITORING
-# =====================
+# Resource Monitoring
 @app.middleware("http")
 async def check_resources(request: Request, call_next):
     if psutil.cpu_percent() > 90:
