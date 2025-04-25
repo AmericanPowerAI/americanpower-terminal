@@ -1,8 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from fastapi_cache.decorator import cache
@@ -11,9 +12,9 @@ from fastapi_limiter.depends import RateLimiter
 import redis.asyncio as redis
 import logging
 import os
+import psutil
 from contextlib import asynccontextmanager
 from terminal_routes import router as terminal_router
-from auth_routes import router as auth_router
 from monitoring import setup_metrics  # Custom module you'll create
 
 # Configure logging
@@ -86,13 +87,6 @@ app.add_middleware(
 # ROUTES
 # =====================
 app.include_router(
-    auth_router,
-    prefix="/auth",
-    tags=["Authentication"],
-    dependencies=[Depends(RateLimiter(times=5, minutes=1))]
-)
-
-app.include_router(
     terminal_router,
     prefix="/terminal",
     tags=["Terminal Engine"],
@@ -129,7 +123,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # ERROR HANDLERS
 # =====================
 @app.exception_handler(HTTPException)
-async def custom_http_exception_handler(request, exc):
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
     logger.error(f"HTTP Error {exc.status_code}: {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
@@ -140,7 +134,7 @@ async def custom_http_exception_handler(request, exc):
     )
 
 @app.exception_handler(Exception)
-async def universal_exception_handler(request, exc):
+async def universal_exception_handler(request: Request, exc: Exception):
     logger.critical(f"Unhandled exception: {str(exc)}", exc_info=True)
     return JSONResponse(
         status_code=500,
@@ -160,7 +154,8 @@ async def log_command_webhook(payload: dict):
     return {"status": "logged"}
 
 # GPU acceleration
-app.state.llm_engine = load_ai_model("gpt-4-turbo", device="cuda")
+# Note: You'll need to implement the load_ai_model function or remove this
+# app.state.llm_engine = load_ai_model("gpt-4-turbo", device="cuda")
 
 # Real-time monitoring
 @app.middleware("http")
