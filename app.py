@@ -1,21 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response
-from fastapi_cache import FastAPICache
-from fastapi_cache.backends.redis import RedisBackend
-from fastapi_cache.decorator import cache
-from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.depends import RateLimiter
-import redis.asyncio as redis
+from fastapi.staticfiles import StaticFiles
 import logging
 import os
 import psutil
 from contextlib import asynccontextmanager
-from terminal_routes import router as terminal_router
-from monitoring import setup_metrics  # Custom module you'll create
 
 # Configure logging
 logging.basicConfig(
@@ -31,24 +22,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("Initializing Redis connection...")
-    redis_client = redis.from_url(
-        f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379",
-        encoding="utf-8",
-        decode_responses=True
-    )
-    FastAPICache.init(RedisBackend(redis_client), prefix="apg-cache")
-    await FastAPILimiter.init(redis_client)
+    logger.info("Starting APG Terminal Engine...")
     
-    # Initialize monitoring
-    setup_metrics(app)
+    # Initialize your terminal components here
+    # app.state.terminal_engine = initialize_terminal()
     
     yield
     
     # Shutdown
-    logger.info("Closing connections...")
-    await FastAPILimiter.close()
-    await FastAPICache.clear()
+    logger.info("Shutting down...")
 
 app = FastAPI(
     title="APG Universal Terminal Engine",
@@ -68,98 +50,64 @@ app = FastAPI(
 )
 
 # =====================
-# SECURITY MIDDLEWARE
+# MIDDLEWARE
 # =====================
-if os.getenv("ENV") == "production":
-    app.add_middleware(HTTPSRedirectMiddleware)
-    
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["X-API-Version", "X-RateLimit-Limit"]
+    allow_headers=["*"]
 )
 
 # =====================
-# ROUTES
+# TERMINAL ENDPOINTS (Directly in app.py)
 # =====================
-app.include_router(
-    terminal_router,
-    prefix="/terminal",
-    tags=["Terminal Engine"],
-    dependencies=[Depends(RateLimiter(times=30, minutes=1))]
-)
+@app.post("/terminal/execute")
+async def execute_command(command: dict):
+    """Core terminal execution endpoint"""
+    try:
+        # Replace with your actual terminal logic
+        result = {"output": f"Executed: {command.get('cmd')}"}
+        return result
+    except Exception as e:
+        logger.error(f"Command failed: {str(e)}")
+        raise HTTPException(500, "Command execution failed")
+
+@app.get("/terminal/status")
+async def terminal_status():
+    """Get terminal status"""
+    return {"status": "active", "version": app.version}
 
 # =====================
-# MONITORING ENDPOINTS
+# ESSENTIAL ENDPOINTS
 # =====================
-@app.get("/health", include_in_schema=False)
-@cache(expire=10)
+@app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "version": app.version,
-        "redis": "connected" if FastAPICache.get_backend() else "disconnected"
-    }
-
-@app.get("/metrics", include_in_schema=False)
-async def metrics_endpoint():
-    """Prometheus metrics endpoint"""
-    from prometheus_client import generate_latest
-    return Response(
-        content=generate_latest(),
-        media_type="text/plain"
-    )
+    return {"status": "healthy", "version": app.version}
 
 # =====================
-# STATIC FILES (For web clients)
+# STATIC FILES
 # =====================
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # =====================
-# ERROR HANDLERS
+# ERROR HANDLING
 # =====================
-@app.exception_handler(HTTPException)
-async def custom_http_exception_handler(request: Request, exc: HTTPException):
-    logger.error(f"HTTP Error {exc.status_code}: {exc.detail}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.detail,
-            "documentation": request.url_for("developer_docs")
-        }
-    )
-
 @app.exception_handler(Exception)
-async def universal_exception_handler(request: Request, exc: Exception):
-    logger.critical(f"Unhandled exception: {str(exc)}", exc_info=True)
+async def handle_exceptions(request: Request, exc: Exception):
+    logger.error(f"Error processing {request.url}: {str(exc)}")
     return JSONResponse(
         status_code=500,
-        content={
-            "error": "Internal server error",
-            "request_id": request.state.request_id
-        }
+        content={"error": "Internal server error"}
     )
 
 # =====================
-# WEBHOOK EXAMPLE
+# RESOURCE MONITORING
 # =====================
-@app.post("/webhooks/command-log", include_in_schema=False)
-async def log_command_webhook(payload: dict):
-    """For external systems to receive command logs"""
-    logger.info(f"Webhook received: {payload}")
-    return {"status": "logged"}
-
-# GPU acceleration
-# Note: You'll need to implement the load_ai_model function or remove this
-# app.state.llm_engine = load_ai_model("gpt-4-turbo", device="cuda")
-
-# Real-time monitoring
 @app.middleware("http")
-async def resource_monitor(request: Request, call_next):
+async def check_resources(request: Request, call_next):
     if psutil.cpu_percent() > 90:
-        raise HTTPException(429, "Server overloaded")
+        raise HTTPException(429, "Server under heavy load")
     return await call_next(request)
