@@ -1,0 +1,11 @@
+services:
+  - type: web
+    plan: free
+    dockerfile: Dockerfile  # Points to your Dockerfile
+    env: python
+    healthCheckPath: /health
+    envVars:
+      - key: API_KEY
+        value: your_secret_key_here
+      - key: ALLOWED_ORIGINS
+        value: https://yourfrontend.com
