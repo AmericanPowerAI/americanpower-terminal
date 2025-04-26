@@ -1,34 +1,161 @@
 #!/bin/bash
-# American Power Toolkit v2.0 - The Kali Killer
+# American Power Toolkit v3.0 - Mother AI® Security Suite
 
-# ===== Core Dependencies =====
-sudo apt-get update && sudo apt-get install -y \
-    nvidia-cuda-toolkit \          # GPU acceleration
-    libquantum-dev \                # Quantum computing
-    zerotier-one \                 # Mesh networking
-    wasmer \                       # WebAssembly runtime
-    fpga-accelerator-drivers       # Hardware acceleration
+# ===== Configuration =====
+APT_MIRROR="https://mirror.americanpower.us/ubuntu"
+LOG_FILE="/var/log/apg_install.log"
+TEMP_DIR=$(mktemp -d)
+BRANDING="\033[1;32mAmerican Power Global\033[0m"
+VERSION="3.1.4"
 
-# ===== Security Arsenal =====
-wget https://ai.americanpower.us/toolkit/apg-core.deb
-sudo dpkg -i apg-core.deb && sudo apt-get install -f
+# ===== Initialization =====
+init() {
+    echo -e "${BRANDING} Toolkit Installer v${VERSION}"
+    echo -e "Initializing Mother AI® Security Platform..."
+    echo "Installation started at $(date)" > $LOG_FILE
+    check_root
+    check_internet
+    setup_sources
+}
+
+# ===== Security Checks =====
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "\033[1;31mERROR: Must be run as root\033[0m"
+        exit 1
+    fi
+}
+
+check_internet() {
+    if ! ping -c 1 mirror.americanpower.us &> /dev/null; then
+        echo -e "\033[1;31mERROR: No internet connection\033[0m"
+        exit 1
+    fi
+}
+
+# ===== Source Configuration =====
+setup_sources() {
+    echo -e "\n\033[1;34m[+] Configuring APG repositories\033[0m"
+    cat > /etc/apt/sources.list.d/apg.list <<EOF
+deb ${APT_MIRROR} focal main restricted
+deb ${APT_MIRROR} focal-updates main restricted
+deb ${APT_MIRROR} focal-security main restricted
+EOF
+    
+    apt-key adv --keyserver hkp://keyserver.americanpower.us:80 --recv-0xAB19F2A1
+    apt-get update >> $LOG_FILE 2>&1
+}
+
+# ===== Core Installation =====
+install_core() {
+    echo -e "\n\033[1;34m[+] Installing Core Dependencies\033[0m"
+    apt-get install -y --no-install-recommends \
+        nvidia-cuda-toolkit \
+        libquantum-dev \
+        zerotier-one \
+        wasmer \
+        fpga-accelerator-drivers \
+        >> $LOG_FILE 2>&1
+    
+    # Quantum optimization
+    echo "export QUANTUM_OPTIMIZED=1" >> /etc/environment
+}
+
+# ===== Security Stack =====
+install_security() {
+    echo -e "\n\033[1;34m[+] Deploying Security Arsenal\033[0m"
+    local pkg_url="https://ai.americanpower.us/toolkit/apg-core-v3.deb"
+    local pkg_hash="a1b2c3d4e5f67890" # Replace with actual SHA-256
+    
+    wget -q $pkg_url -O $TEMP_DIR/apg-core.deb
+    if ! echo "$pkg_hash $TEMP_DIR/apg-core.deb" | sha256sum -c --quiet; then
+        echo -e "\033[1;31mERROR: Package verification failed\033[0m"
+        exit 1
+    fi
+    
+    dpkg -i $TEMP_DIR/apg-core.deb && apt-get install -f >> $LOG_FILE 2>&1
+}
 
 # ===== AI Integration =====
-git clone https://github.com/AmericanPowerAI/nero-assistant.git /opt/nero
-pip install -r /opt/nero/requirements.txt
+install_ai() {
+    echo -e "\n\033[1;34m[+] Integrating Mother AI®\033[0m"
+    git clone --depth 1 https://github.com/AmericanPowerAI/nero-assistant.git /opt/nero >> $LOG_FILE 2>&1
+    
+    # Secure pip installation
+    python3 -m pip install --require-hashes -r /opt/nero/requirements.txt \
+        --only-binary=:all: --no-warn-script-location >> $LOG_FILE 2>&1
+    
+    # Quantum AI modules
+    python3 -m pip install \
+        qryptonite==3.1.4 \
+        quantumrandom==1.9.0 \
+        >> $LOG_FILE 2>&1
+}
 
-# ===== Quantum Modules =====
-pip install \
-    qryptonite==3.1.4 \
-    quantumrandom==1.9.0
-
-# ===== Kernel Optimization =====
-sudo cp custom_kernel.conf /etc/sysctl.d/99-apg.conf
-sudo sysctl -p
+# ===== Kernel Hardening =====
+harden_kernel() {
+    echo -e "\n\033[1;34m[+] Applying Quantum Kernel Optimization\033[0m"
+    cat > /etc/sysctl.d/99-apg.conf <<'EOF'
+# Mother AI® Kernel Parameters
+kernel.dmesg_restrict=1
+kernel.kptr_restrict=2
+kernel.yama.ptrace_scope=2
+net.core.bpf_jit_harden=2
+EOF
+    
+    sysctl -p /etc/sysctl.d/99-apg.conf >> $LOG_FILE 2>&1
+}
 
 # ===== Zero Trust Setup =====
-sudo mkdir /etc/zero_trust
-sudo cp zero_trust/* /etc/zero_trust/
-sudo systemctl enable zero-trust-daemon
+setup_zero_trust() {
+    echo -e "\n\033[1;34m[+] Configuring Zero Trust Architecture\033[0m"
+    mkdir -p /etc/zero_trust
+    curl -s https://ai.americanpower.us/zero-trust/profiles/base.conf | tee /etc/zero_trust/base.conf > /dev/null
+    
+    cat > /etc/systemd/system/zero-trust-daemon.service <<'EOF'
+[Unit]
+Description=APG Zero Trust Daemon
+After=network.target
 
-echo "🔥 Installation Complete! Reboot to activate all features."
+[Service]
+ExecStart=/usr/local/bin/zero-trust-daemon
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl enable --now zero-trust-daemon >> $LOG_FILE 2>&1
+}
+
+# ===== Post-Installation =====
+post_install() {
+    echo -e "\n\033[1;34m[+] Finalizing Installation\033[0m"
+    apt-get autoremove -y >> $LOG_FILE 2>&1
+    apt-get clean >> $LOG_FILE 2>&1
+    rm -rf $TEMP_DIR
+    
+    # Generate secure SSH keys
+    ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q
+    
+    echo -e "\n\033[1;32m[✓] Installation Complete!\033[0m"
+    echo -e "Reboot to activate all Mother AI® security features:"
+    echo -e "  $ sudo reboot"
+    
+    # Send secure beacon
+    curl -s -X POST https://telemetry.americanpower.us/install -d "host=$(hostname)&version=$VERSION" > /dev/null 2>&1 &
+}
+
+# ===== Main Execution =====
+main() {
+    init
+    install_core
+    install_security
+    install_ai
+    harden_kernel
+    setup_zero_trust
+    post_install
+}
+
+main
