@@ -1,18 +1,18 @@
 FROM kalilinux/kali-rolling:latest
 
-# Install 30 most critical tools (fits free tier)
+# Install core tools (fits ~1.9GB)
 RUN apt-get update && apt-get install -y \
-    # Network scanning
-    nmap masscan dnsutils netcat \
-    # Web security
-    sqlmap nikto wpscan \
-    # Password attacks
-    hydra john \
-    # Forensics
-    binwalk foremost \
+    # Network
+    nmap netcat masscan dnsutils \
+    # Web
+    nikto gobuster wpscan \
+    # Security
+    sqlmap hydra john \
+    # Forensics (lite)
+    binwalk foremost volatility-tools \
     # System
     htop curl wget \
-    # Cleanup to save space
+    # Cleanup
     && apt-get remove -y kali-linux-large \
     && apt-get autoremove -y \
     && apt-get clean \
