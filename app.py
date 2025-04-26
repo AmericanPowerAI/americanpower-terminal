@@ -4,6 +4,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 import logging
+from logging.handlers import RotatingFileHandler  # Updated import
 import os
 import psutil
 from contextlib import asynccontextmanager
@@ -35,7 +36,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("api.log", maxBytes=1_000_000, backupCount=1),  # Reduced log retention
+        RotatingFileHandler("api.log", maxBytes=1_000_000, backupCount=1),  # Fixed: Using RotatingFileHandler
         logging.StreamHandler()
     ]
 )
