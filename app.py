@@ -4,7 +4,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 import logging
-from logging.handlers import RotatingFileHandler  # Updated import
+from logging.handlers import RotatingFileHandler
 import os
 import psutil
 from contextlib import asynccontextmanager
@@ -12,8 +12,8 @@ import httpx
 from typing import Annotated
 
 # ===== Configuration =====
-MAX_MEMORY = 450  # MB (Render free tier has 512MB)
-MAX_REQUESTS = 8   # Conservative concurrency limit
+MAX_MEMORY = 350  # Reduced from 450MB for safety on Render free tier
+MAX_REQUESTS = 8
 API_KEY_NAME = "X-API-Key"
 
 # ===== Security Setup =====
@@ -27,7 +27,6 @@ async def validate_api_key(api_key: str = Depends(api_key_header)):
 # ===== Enhanced Logging =====
 class SecurityFilter(logging.Filter):
     def filter(self, record):
-        # Redact sensitive information from logs
         if hasattr(record, 'msg'):
             record.msg = str(record.msg).replace(os.getenv("API_KEY", ""), "[REDACTED]")
         return True
@@ -36,7 +35,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        RotatingFileHandler("api.log", maxBytes=1_000_000, backupCount=1),  # Fixed: Using RotatingFileHandler
+        RotatingFileHandler("api.log", maxBytes=1_000_000, backupCount=1),
         logging.StreamHandler()
     ]
 )
@@ -58,8 +57,14 @@ state = ServerState()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("Starting APG Terminal Engine - Render Free Tier Optimized")
-    logger.info(f"Memory Limit: {MAX_MEMORY}MB | Concurrency: {MAX_REQUESTS}")
+    process = psutil.Process(os.getpid())
+    startup_mem = process.memory_info().rss / (1024 ** 2)
+    
+    logger.info(f"Starting APG Terminal Engine - Render Free Tier Optimized")
+    logger.info(f"Memory Limit: {MAX_MEMORY}MB | Startup Usage: {startup_mem:.1f}MB | Concurrency: {MAX_REQUESTS}")
+    
+    if startup_mem > MAX_MEMORY * 0.8:
+        logger.warning(f"High startup memory usage: {startup_mem:.1f}MB")
     
     yield
     
@@ -90,49 +95,63 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("ALLOWED_ORIGINS", "").split(","),
     allow_credentials=True,
-    allow_methods=["POST"],  # Only POST for terminal/execute
+    allow_methods=["POST"],
     allow_headers=[API_KEY_NAME, "Content-Type"],
-    max_age=300  # Reduced from 600
+    max_age=300
 )
 
 app.add_middleware(
     GZipMiddleware,
-    minimum_size=1000  # Increased from 500
+    minimum_size=1000
 )
 
 # ===== Rate Limiting =====
 @app.middleware("http")
 async def resource_limiter(request: Request, call_next):
-    # Memory check
-    mem = psutil.virtual_memory()
-    used_mb = mem.used / (1024 ** 2)
-    if used_mb > MAX_MEMORY:
-        logger.warning(f"Memory threshold exceeded: {used_mb:.1f}MB")
-        raise HTTPException(429, detail={
-            "error": "System busy",
-            "status": "retry_after_30s"
-        })
+    # Skip limiting for health checks
+    if request.url.path == "/health":
+        return await call_next(request)
     
-    # Concurrency check
-    if state.active_requests >= MAX_REQUESTS:
-        logger.warning(f"Concurrent limit reached: {state.active_requests}")
-        raise HTTPException(429, detail={
-            "error": "Too many requests",
-            "status": "retry_after_15s"
-        })
-    
-    state.active_requests += 1
     try:
-        response = await call_next(request)
+        # Process-specific memory check
+        process = psutil.Process(os.getpid())
+        used_mb = process.memory_info().rss / (1024 ** 2)
         
-        # Add security headers
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        logger.info(f"Current memory usage: {used_mb:.1f}MB")
         
-        return response
-    finally:
-        state.active_requests -= 1
+        if used_mb > MAX_MEMORY:
+            logger.warning(f"Memory threshold exceeded: {used_mb:.1f}MB (Limit: {MAX_MEMORY}MB)")
+            raise HTTPException(429, detail={
+                "error": "System busy",
+                "status": "retry_after_30s",
+                "memory_usage": f"{used_mb:.1f}MB",
+                "memory_limit": f"{MAX_MEMORY}MB"
+            })
+        
+        # Concurrency check
+        if state.active_requests >= MAX_REQUESTS:
+            logger.warning(f"Concurrent limit reached: {state.active_requests}")
+            raise HTTPException(429, detail={
+                "error": "Too many requests",
+                "status": "retry_after_15s",
+                "active_requests": state.active_requests
+            })
+        
+        state.active_requests += 1
+        try:
+            response = await call_next(request)
+            response.headers.update({
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+            })
+            return response
+        finally:
+            state.active_requests -= 1
+            
+    except Exception as e:
+        logger.error(f"Resource limiter error: {str(e)}", exc_info=True)
+        raise HTTPException(500, "Internal server error")
 
 # ===== Endpoints =====
 @app.post("/terminal/execute")
@@ -142,23 +161,20 @@ async def execute_command(
 ):
     """Secure command execution endpoint"""
     try:
-        # Validate content type
         if request.headers.get("content-type") != "application/json":
             raise HTTPException(415, "Unsupported Media Type")
             
         command = await request.json()
         
-        # Basic input validation
         if not command.get("cmd"):
             raise HTTPException(422, "Missing command")
             
         if len(command["cmd"]) > 200:
             raise HTTPException(413, "Command too long")
         
-        # Add your actual command execution logic here
         return {
             "status": "success",
-            "output": f"Processed: {command['cmd'][:50]}...",  # Truncated for security
+            "output": f"Processed: {command['cmd'][:50]}...",
             "resource_usage": f"{psutil.cpu_percent()}% CPU"
         }
         
@@ -173,12 +189,13 @@ async def execute_command(
 async def health_check():
     """Lightweight health check"""
     try:
-        mem = psutil.virtual_memory()
+        process = psutil.Process(os.getpid())
+        mem = process.memory_info()
         return {
             "status": "operational",
             "version": app.version,
             "resources": {
-                "memory": f"{mem.used / (1024 ** 2):.1f}/{mem.total / (1024 ** 2):.1f} MB",
+                "memory": f"{mem.rss / (1024 ** 2):.1f}MB",
                 "cpu": f"{psutil.cpu_percent()}%",
                 "active_requests": state.active_requests
             },
