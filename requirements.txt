@@ -1,29 +1,22 @@
-# CORE
+# ===== CORE =====
 fastapi==0.110.1
 uvicorn[standard]==0.27.1
 python-multipart==0.0.9
-requests==2.31.0
+httpx==0.27.0  # Moved from DEV to CORE (required for production)
 
-# SECURITY
-redis==5.0.3
+# ===== SECURITY =====
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 slowapi==0.1.8
-fastapi-cache2==0.2.2
-aioredis==1.3.1  # CRITICAL ADDITION - must come BEFORE fastapi-limiter
-fastapi-limiter==0.1.4  
-python-dotenv==1.0.1
-
-# MONITORING
-prometheus-client==0.20.0
-sentry-sdk==1.15.0
-
-# TOOLS
-python-nmap==0.7.1
-psutil==5.9.8
+fastapi-limiter==0.1.4  # Requires Redis (see notes)
 pyopenssl==24.0.0
 
-# DEV
-pytest==8.1.1
-httpx==0.27.0
-pytest-asyncio==0.23.5
+# ===== MONITORING =====
+prometheus-client==0.20.0
+psutil==5.9.8  # Moved from TOOLS (essential for resource monitoring)
+
+# ===== OPTIONAL (Remove if unused) =====
+# python-nmap==0.7.1  # Only needed if using nmap Python bindings
+# aioredis==1.3.1    # Only needed if using Redis
+# fastapi-cache2==0.2.2  # Remove if not caching
+# sentry-sdk==1.15.0  # Remove if not using Sentry
