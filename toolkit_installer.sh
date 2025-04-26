@@ -1,17 +1,45 @@
 #!/bin/bash
-# American Power Toolkit v3.0 - Mother AI® Security Suite
+# American Power Toolkit v3.1 - Mother AI® Security Suite with Kali Integration
 
 # ===== Configuration =====
 APT_MIRROR="https://mirror.americanpower.us/ubuntu"
+KALI_MIRROR="http://http.kali.org/kali"
 LOG_FILE="/var/log/apg_install.log"
 TEMP_DIR=$(mktemp -d)
 BRANDING="\033[1;32mAmerican Power Global\033[0m"
-VERSION="3.1.4"
+VERSION="3.1.5"
+
+# ===== Tool Selection =====
+KALI_TOOLS=(
+    # Information Gathering
+    nmap masscan dnsrecon enum4linux
+    
+    # Vulnerability Analysis
+    sqlmap nikto openvas
+    
+    # Password Attacks
+    john hashcat hydra
+    
+    # Forensics
+    binwalk foremost volatility sleuthkit
+    
+    # Web Applications
+    wpscan gobuster dirbuster
+    
+    # Reverse Engineering
+    radare2 ghidra
+    
+    # Exploitation
+    metasploit-framework exploitdb
+    
+    # Hardware Hacking
+    rfkill rfcat
+)
 
 # ===== Initialization =====
 init() {
     echo -e "${BRANDING} Toolkit Installer v${VERSION}"
-    echo -e "Initializing Mother AI® Security Platform..."
+    echo -e "Initializing Mother AI® Security Platform with Kali Integration..."
     echo "Installation started at $(date)" > $LOG_FILE
     check_root
     check_internet
@@ -35,14 +63,24 @@ check_internet() {
 
 # ===== Source Configuration =====
 setup_sources() {
-    echo -e "\n\033[1;34m[+] Configuring APG repositories\033[0m"
+    echo -e "\n\033[1;34m[+] Configuring APG and Kali repositories\033[0m"
+    
+    # Main APG Repo
     cat > /etc/apt/sources.list.d/apg.list <<EOF
 deb ${APT_MIRROR} focal main restricted
 deb ${APT_MIRROR} focal-updates main restricted
 deb ${APT_MIRROR} focal-security main restricted
 EOF
-    
+
+    # Kali Repo (Limited)
+    cat > /etc/apt/sources.list.d/kali.list <<EOF
+deb ${KALI_MIRROR} kali-last-snapshot main contrib non-free
+EOF
+
+    # Key Management
     apt-key adv --keyserver hkp://keyserver.americanpower.us:80 --recv-0xAB19F2A1
+    wget -q -O - https://archive.kali.org/archive-key.asc | apt-key add -
+    
     apt-get update >> $LOG_FILE 2>&1
 }
 
@@ -59,6 +97,29 @@ install_core() {
     
     # Quantum optimization
     echo "export QUANTUM_OPTIMIZED=1" >> /etc/environment
+}
+
+# ===== Kali Tool Installation =====
+install_kali_tools() {
+    echo -e "\n\033[1;34m[+] Installing Kali Linux Toolset\033[0m"
+    
+    # Install base tools
+    apt-get install -y --allow-downgrades \
+        --allow-change-held-packages \
+        "${KALI_TOOLS[@]}" \
+        >> $LOG_FILE 2>&1
+
+    # Special configurations
+    echo -e "\n\033[1;34m[+] Configuring Security Tools\033[0m"
+    chmod 4755 /usr/bin/nmap
+    setcap cap_net_raw+ep /usr/bin/ping
+    setcap cap_net_admin+ep /usr/sbin/zerotier-one
+    
+    # Metasploit database setup
+    if systemctl list-unit-files | grep -q metasploit; then
+        systemctl enable --now postgresql >> $LOG_FILE 2>&1
+        msfdb init >> $LOG_FILE 2>&1
+    fi
 }
 
 # ===== Security Stack =====
@@ -132,6 +193,8 @@ EOF
 # ===== Post-Installation =====
 post_install() {
     echo -e "\n\033[1;34m[+] Finalizing Installation\033[0m"
+    
+    # Cleanup
     apt-get autoremove -y >> $LOG_FILE 2>&1
     apt-get clean >> $LOG_FILE 2>&1
     rm -rf $TEMP_DIR
@@ -139,18 +202,32 @@ post_install() {
     # Generate secure SSH keys
     ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q
     
+    # Tool verification
+    echo -e "\n\033[1;34m[+] Installed Tool Verification\033[0m"
+    for tool in "${KALI_TOOLS[@]}"; do
+        if command -v "${tool%% *}" >/dev/null 2>&1; then
+            echo -e "\033[1;32m[✓] ${tool}\033[0m"
+        else
+            echo -e "\033[1;31m[✗] ${tool} (missing)\033[0m"
+        fi
+    done
+    
     echo -e "\n\033[1;32m[✓] Installation Complete!\033[0m"
-    echo -e "Reboot to activate all Mother AI® security features:"
+    echo -e "Reboot to activate all security features:"
     echo -e "  $ sudo reboot"
     
-    # Send secure beacon
-    curl -s -X POST https://telemetry.americanpower.us/install -d "host=$(hostname)&version=$VERSION" > /dev/null 2>&1 &
+    # Secure telemetry beacon
+    curl -s -X POST https://telemetry.americanpower.us/install \
+        -H "Authorization: Bearer $(cat /etc/machine-id)" \
+        -d "host=$(hostname)&version=$VERSION&tools=${#KALI_TOOLS[@]}" \
+        > /dev/null 2>&1 &
 }
 
 # ===== Main Execution =====
 main() {
     init
     install_core
+    install_kali_tools
     install_security
     install_ai
     harden_kernel
