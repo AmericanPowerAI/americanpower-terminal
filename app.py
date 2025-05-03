@@ -10,6 +10,9 @@ import psutil
 from contextlib import asynccontextmanager
 import httpx
 from typing import Annotated
+import re
+import random
+import hashlib
 
 # ===== Configuration =====
 MAX_MEMORY = 350  # Reduced from 450MB for safety on Render free tier
@@ -50,6 +53,11 @@ class ServerState:
             timeout=30.0,
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=2)
         )
+        self.hacking_commands = {
+            "exploit": "Generates custom exploit code",
+            "scan": "AI-powered network scanning",
+            "decrypt": "Attempts AI-assisted decryption"
+        }
 
 state = ServerState()
 
@@ -104,6 +112,66 @@ app.add_middleware(
     GZipMiddleware,
     minimum_size=1000
 )
+
+# ===== Hacking Command Processor =====
+def process_hacking_command(command: str):
+    """Process AI hacking commands with security context"""
+    cmd_parts = command.lower().split()
+    if not cmd_parts:
+        return {"error": "Empty command"}
+    
+    base_cmd = cmd_parts[0]
+    target = " ".join(cmd_parts[1:]) if len(cmd_parts) > 1 else None
+    
+    if base_cmd == "exploit":
+        if not target:
+            return {"error": "No target specified"}
+        
+        # Simulate exploit generation
+        return {
+            "action": "exploit",
+            "target": target,
+            "payload": f"<script>alert('XSS:{target}')</script>",
+            "signature": hashlib.md5(target.encode()).hexdigest()[:8]
+        }
+        
+    elif base_cmd == "scan":
+        scan_types = {
+            "network": ["nmap -sV", "masscan -p1-65535"],
+            "web": ["nikto -h", "wpscan --url"],
+            "ai": ["llm_scan --model=gpt-4"]
+        }
+        
+        scan_type = "network"  # default
+        if target and any(t in target for t in scan_types.keys()):
+            scan_type = next(t for t in scan_types.keys() if t in target)
+        
+        return {
+            "action": "scan",
+            "type": scan_type,
+            "commands": scan_types[scan_type],
+            "sample_targets": ["192.168.1.1", "example.com", "GPT-4"]
+        }
+        
+    elif base_cmd == "decrypt":
+        if not target:
+            return {"error": "No hash provided"}
+        
+        return {
+            "action": "decrypt",
+            "hash": target,
+            "attempts": [
+                f"rainbow_table --hash={target}",
+                f"john --format=raw-md5 {target}"
+            ]
+        }
+        
+    else:
+        return {
+            "error": "Unknown command",
+            "available_commands": list(state.hacking_commands.keys()),
+            "tip": "Try with a target, e.g. 'exploit CVE-2023-1234'"
+        }
 
 # ===== Rate Limiting =====
 @app.middleware("http")
@@ -172,6 +240,18 @@ async def execute_command(
         if len(command["cmd"]) > 200:
             raise HTTPException(413, "Command too long")
         
+        # Check if it's a hacking command
+        cmd_parts = command["cmd"].split()
+        if cmd_parts and cmd_parts[0] in state.hacking_commands:
+            result = process_hacking_command(command["cmd"])
+            return {
+                "status": "success",
+                "type": "hacking",
+                "result": result,
+                "resource_usage": f"{psutil.cpu_percent()}% CPU"
+            }
+        
+        # Regular command processing
         return {
             "status": "success",
             "output": f"Processed: {command['cmd'][:50]}...",
@@ -184,6 +264,38 @@ async def execute_command(
     except Exception as e:
         logger.error(f"Execution error: {str(e)}", exc_info=True)
         raise HTTPException(500, "Command processing failed")
+
+@app.post("/terminal/hacking")
+async def hacking_command(
+    request: Request,
+    api_key: Annotated[str, Depends(validate_api_key)]
+):
+    """Dedicated hacking command endpoint"""
+    try:
+        if request.headers.get("content-type") != "application/json":
+            raise HTTPException(415, "Unsupported Media Type")
+            
+        command = await request.json()
+        
+        if not command.get("command"):
+            raise HTTPException(422, "Missing command")
+            
+        if len(command["command"]) > 200:
+            raise HTTPException(413, "Command too long")
+        
+        result = process_hacking_command(command["command"])
+        return {
+            "status": "success",
+            "result": result,
+            "resource_usage": f"{psutil.cpu_percent()}% CPU"
+        }
+        
+    except ValueError as e:
+        logger.error(f"JSON parsing error: {str(e)}")
+        raise HTTPException(400, "Invalid JSON")
+    except Exception as e:
+        logger.error(f"Hacking command error: {str(e)}", exc_info=True)
+        raise HTTPException(500, "Hacking command processing failed")
 
 @app.get("/health")
 async def health_check():
@@ -202,6 +314,9 @@ async def health_check():
             "limits": {
                 "max_memory": f"{MAX_MEMORY}MB",
                 "max_concurrency": MAX_REQUESTS
+            },
+            "features": {
+                "hacking_commands": list(state.hacking_commands.keys())
             }
         }
     except Exception as e:
